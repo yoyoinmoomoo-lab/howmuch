@@ -36,6 +36,23 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ko">
+      <head>
+        {/* Google tag (gtag.js) */}
+        <script
+          async
+          src="https://www.googletagmanager.com/gtag/js?id=G-J4C28RRC0Z"
+        />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              window.dataLayer = window.dataLayer || [];
+              function gtag(){dataLayer.push(arguments);}
+              gtag('js', new Date());
+              gtag('config', 'G-J4C28RRC0Z');
+            `,
+          }}
+        />
+      </head>
       <body
         className={`${notoSansKR.variable} min-h-screen flex flex-col text-zinc-800 bg-white antialiased`}
       >
