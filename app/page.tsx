@@ -52,6 +52,23 @@ const toNumDecimal = (s?: string): number => {
 
 const formatNumber = (n: number): string => n.toLocaleString("ko-KR");
 
+// 만원 → 원 변환 유틸
+const manToWon = (man: number): number => Math.round((man || 0) * 10000);
+
+// 한국식 짧은 표기 (출력용 선택): 1억 2,345만원 / 123.4만원 등
+function formatKoreanCurrencyShort(won: number): string {
+  if (won === 0) return "0원";
+  const abs = Math.abs(won);
+  const sign = won < 0 ? "-" : "";
+  const eok = Math.floor(abs / 100_000_000);
+  const rest = abs % 100_000_000;
+  const man = Math.round(rest / 10_000);
+  if (eok > 0) {
+    return `${sign}${eok}억${man ? " " + new Intl.NumberFormat("ko-KR").format(man) + "만원" : ""}`;
+  }
+  return `${sign}${new Intl.NumberFormat("ko-KR").format(man)}만원`;
+}
+
 // 한글 금액 변환 함수
 const formatKoreanCurrency = (num: number): string => {
   if (num === 0) return "";
@@ -122,12 +139,14 @@ const fmtStrDecimal = (s?: string) => {
   return n > 0 ? n.toFixed(2) : "";
 };
 
-// 대출원금 계산
+// 대출원금 계산 (만원 단위 입력값을 원으로 변환)
 const calcLoanPrincipal = (o: OptionInput, c: CommonInput): number => {
   if (!o.loanAuto) {
-    return Math.max(toNum(o.loanPrincipalManualStr), 0);
+    // 수동 입력값도 만원 단위
+    return manToWon(toNum(o.loanPrincipalManualStr));
   }
-  return Math.max(toNum(o.depositStr) - toNum(c.cashOnHandStr), 0);
+  // 보증금(만원) - 보유현금(만원) = 만원 단위 차이 → 원으로 변환
+  return manToWon(Math.max(toNum(o.depositStr) - toNum(c.cashOnHandStr), 0));
 };
 
 // 월 이자 계산
@@ -140,9 +159,9 @@ const calcMonthlyInterest = (
   );
 };
 
-// 자기자본 계산 (묶이는 금액)
+// 자기자본 계산 (묶이는 금액) - 만원 단위로 비교 후 원으로 변환
 function calcOwnCapital(o: OptionInput, c: CommonInput): number {
-  return Math.min(toNum(o.depositStr), toNum(c.cashOnHandStr));
+  return manToWon(Math.min(toNum(o.depositStr), toNum(c.cashOnHandStr)));
 }
 
 // 월 기회비용 계산
@@ -156,7 +175,7 @@ function calcMonthlyOppCost(
   return Math.floor(ownCapital * (oppRatePct / 100) / 12);
 }
 
-// 월 실지출 합계 계산
+// 월 실지출 합계 계산 (만원 단위 입력값을 원으로 변환)
 function calcMonthlyTotal(
   o: OptionInput,
   c: CommonInput,
@@ -164,15 +183,17 @@ function calcMonthlyTotal(
 ): OptionCalcResult {
   const lp = calcLoanPrincipal(o, c);
   const interest = calcMonthlyInterest(lp, c.annualRatePctStr);
+  // 관리비, 주차비, 교통비는 원 단위 그대로
   const base =
     toNum(o.mgmtFeeStr) +
     toNum(o.parkingFeeStr) +
     toNum(o.transportMonthlyStr);
-  const wolse = o.rentType === "WOLSE" ? toNum(o.monthlyRentStr) : 0;
+  // 월세는 만원 단위 → 원으로 변환
+  const wolse = o.rentType === "WOLSE" ? manToWon(toNum(o.monthlyRentStr)) : 0;
   const monthlyTotal = base + wolse + interest;
 
   // 자기자본은 항상 계산 (고급 계산 ON/OFF 관계없이)
-  const cap = Math.min(toNum(o.depositStr), toNum(c.cashOnHandStr)); // own capital
+  const cap = calcOwnCapital(o, c);
 
   const result: OptionCalcResult = {
     loanPrincipal: lp,
@@ -267,6 +288,64 @@ const MoneyInputField = memo(function MoneyInputField({
 });
 
 MoneyInputField.displayName = "MoneyInputField";
+
+// 만원 단위 입력 컴포넌트
+const MoneyInputMan = memo(function MoneyInputMan({
+  id,
+  value,
+  onChange,
+  placeholder,
+  disabled = false,
+}: {
+  id: string;
+  value: string;
+  onChange?: (s: string) => void;
+  placeholder?: string;
+  disabled?: boolean;
+}) {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!onChange || disabled) return;
+    const raw = e.target.value;
+    // 숫자만 허용
+    const filtered = raw.replace(/[^\d]/g, "");
+    onChange(filtered);
+  };
+
+  const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    const v = e.target.value.replace(/[^\d]/g, "");
+    if (v) {
+      e.target.value = new Intl.NumberFormat("ko-KR").format(Number(v));
+    }
+  };
+
+  return (
+    <input
+      id={id}
+      inputMode="numeric"
+      pattern="[0-9]*"
+      autoComplete="off"
+      disabled={disabled}
+      className={`w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#007AFF] focus:border-transparent ${
+        disabled
+          ? "bg-gray-50 text-gray-400 cursor-not-allowed"
+          : "text-[#222222]"
+      }`}
+      value={value}
+      onChange={handleChange}
+      onBlur={handleBlur}
+      placeholder={placeholder}
+    />
+  );
+}, (prevProps, nextProps) => {
+  return (
+    prevProps.id === nextProps.id &&
+    prevProps.value === nextProps.value &&
+    prevProps.placeholder === nextProps.placeholder &&
+    prevProps.disabled === nextProps.disabled
+  );
+});
+
+MoneyInputMan.displayName = "MoneyInputMan";
 
 // 소수점 입력 컴포넌트 (기회비용 연수익률용)
 const DecimalInput = memo(function DecimalInput({
@@ -753,8 +832,15 @@ export default function Page() {
       return <span className="text-xs text-gray-500">+{KRW(d)}</span>;
     };
 
-    // 모든 옵션 ID (비활성 포함)
-    const allOptIds = opts.map((o) => o.id);
+    // 항상 5개 슬롯으로 고정
+    const MAX_OPTIONS = 5;
+    const active = opts.filter((o) => o.enabled);
+    const slots = [...active, ...Array(Math.max(0, MAX_OPTIONS - active.length)).fill(null)];
+    
+    // 고정 폭 설정
+    const FIRST_W = 140; // 항목명 열
+    const COL_W = 160; // 옵션 열(각각)
+    const TABLE_MINW = FIRST_W + MAX_OPTIONS * COL_W; // 140 + 5*160 = 940
 
     return (
       <section
@@ -765,70 +851,81 @@ export default function Page() {
           옵션 비교표
         </div>
 
+        {/* 모바일 스크롤 안내 */}
+        <div className="mb-2 flex items-center gap-2 text-xs text-gray-500 md:hidden">
+          <span>←</span>
+          <span>좌우로 스크롤하여 모든 옵션을 확인하세요</span>
+          <span>→</span>
+        </div>
+
         <div className="w-full overflow-x-auto">
-          <table className="w-full min-w-[780px] border-collapse text-sm table-fixed">
+          <table
+            className="w-full border-collapse text-sm"
+            style={{ minWidth: TABLE_MINW }}
+          >
+            <colgroup>
+              <col style={{ width: FIRST_W }} />
+              {Array.from({ length: MAX_OPTIONS }).map((_, i) => (
+                <col key={i} style={{ width: COL_W }} />
+              ))}
+            </colgroup>
             <thead>
               <tr>
-                <th className="w-48 px-4 py-2 text-left text-gray-500 whitespace-nowrap">
+                <th className="sticky left-0 z-10 bg-white px-4 py-2 text-left text-gray-500 whitespace-nowrap">
                   항목
                 </th>
-                {allOptIds.map((id) => {
-                  const opt = opts.find((o) => o.id === id);
-                  const label = opt?.title?.trim() || `옵션 ${id}`;
-                  return (
-                    <th
-                      key={id}
-                      className="min-w-[160px] px-3 py-2 text-right"
-                    >
-                      {label}
-                      <div className="text-xs text-gray-400">옵션 {id}</div>
-                    </th>
-                  );
-                })}
+                {slots.map((opt, i) => (
+                  <th
+                    key={i}
+                    className={`px-3 py-2 text-right ${!opt ? "text-gray-300" : ""}`}
+                    title={opt?.title || "비어 있음"}
+                  >
+                    {opt ? (opt.title || opt.id) : "—"}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
               {/* 계약정보 */}
               <tr className="border-t bg-gray-50">
-                <td className="px-4 py-2 text-xs font-semibold text-gray-600 whitespace-nowrap">
+                <td className="sticky left-0 z-10 bg-gray-50 px-4 py-2 text-xs font-semibold text-gray-600 whitespace-nowrap">
                   계약정보
                 </td>
-                {allOptIds.map((id) => (
-                  <td key={id} className="px-3 py-2"></td>
+                {slots.map((opt, i) => (
+                  <td key={i} className="px-3 py-2"></td>
                 ))}
               </tr>
               <tr className="border-t border-gray-200">
-                <td className="px-4 py-2 pl-8 whitespace-nowrap text-left text-[#222222]">
+                <td className="sticky left-0 z-10 bg-white px-4 py-2 pl-8 whitespace-nowrap text-left text-[#222222] truncate">
                   거래유형
                 </td>
-                {allOptIds.map((id) => {
-                  const o = opts.find((x) => x.id === id && x.enabled);
-                  return (
-                    <td
-                      key={id}
-                      className="px-3 py-2 text-right align-middle text-[#222222]"
-                    >
-                      {o
-                        ? o.rentType === "JEONSE"
-                          ? "전세"
-                          : "월세"
-                        : dash}
-                    </td>
-                  );
-                })}
+                {slots.map((opt, i) => (
+                  <td
+                    key={i}
+                    className={`px-3 py-2 text-right align-middle text-[#222222] ${!opt ? "text-gray-300" : ""}`}
+                  >
+                    {opt && opt.enabled
+                      ? opt.rentType === "JEONSE"
+                        ? "전세"
+                        : "월세"
+                      : dash}
+                  </td>
+                ))}
               </tr>
               <tr className="border-t border-gray-200">
-                <td className="px-4 py-2 pl-8 whitespace-nowrap text-left text-[#222222]">
+                <td className="sticky left-0 z-10 bg-white px-4 py-2 pl-8 whitespace-nowrap text-left text-[#222222] truncate">
                   보증금
                 </td>
-                {allOptIds.map((id) => {
-                  const o = opts.find((x) => x.id === id && x.enabled);
+                {slots.map((opt, i) => {
+                  const r = opt ? results.get(opt.id) : null;
                   return (
                     <td
-                      key={id}
-                      className="px-3 py-2 text-right align-middle text-[#222222]"
+                      key={i}
+                      className={`px-3 py-2 text-right align-middle text-[#222222] tabular-nums ${!opt ? "text-gray-300" : ""}`}
                     >
-                      {o ? KRW(toNum(o.depositStr)) : dash}
+                      {opt && opt.enabled && r
+                        ? KRW(manToWon(toNum(opt.depositStr)))
+                        : dash}
                     </td>
                   );
                 })}
@@ -836,51 +933,48 @@ export default function Page() {
 
               {/* 월 고정비 */}
               <tr className="border-t bg-gray-50">
-                <td className="px-4 py-2 text-xs font-semibold text-gray-600 whitespace-nowrap">
+                <td className="sticky left-0 z-10 bg-gray-50 px-4 py-2 text-xs font-semibold text-gray-600 whitespace-nowrap">
                   월 고정비
                 </td>
-                {allOptIds.map((id) => (
-                  <td key={id} className="px-3 py-2"></td>
+                {slots.map((opt, i) => (
+                  <td key={i} className="px-3 py-2"></td>
                 ))}
               </tr>
               {[
                 {
                   label: "월세",
-                  getVal: (id: string) => {
-                    const o = get(id).o;
-                    return o?.rentType === "WOLSE"
-                      ? toNum(o.monthlyRentStr)
+                  getVal: (opt: OptionInput | null) => {
+                    if (!opt || !opt.enabled) return null;
+                    return opt.rentType === "WOLSE"
+                      ? manToWon(toNum(opt.monthlyRentStr))
                       : null;
                   },
                 },
                 {
                   label: "관리비",
-                  getVal: (id: string) => toNum(get(id).o?.mgmtFeeStr || ""),
+                  getVal: (opt: OptionInput | null) => opt && opt.enabled ? toNum(opt.mgmtFeeStr || "") : null,
                 },
                 {
                   label: "주차비",
-                  getVal: (id: string) =>
-                    toNum(get(id).o?.parkingFeeStr || ""),
+                  getVal: (opt: OptionInput | null) => opt && opt.enabled ? toNum(opt.parkingFeeStr || "") : null,
                 },
                 {
-                  label: "교통비(월)",
-                  getVal: (id: string) =>
-                    toNum(get(id).o?.transportMonthlyStr || ""),
+                  label: "교통비",
+                  getVal: (opt: OptionInput | null) => opt && opt.enabled ? toNum(opt.transportMonthlyStr || "") : null,
                 },
               ].map((row) => (
                 <tr key={row.label} className="border-t border-gray-200">
-                  <td className="px-4 py-2 pl-8 whitespace-nowrap text-left text-[#222222]">
+                  <td className="sticky left-0 z-10 bg-white px-4 py-2 pl-8 whitespace-nowrap text-left text-[#222222] truncate">
                     {row.label}
                   </td>
-                  {allOptIds.map((id) => {
-                    const v = row.getVal(id);
-                    const enabled = opts.find((o) => o.id === id)?.enabled;
+                  {slots.map((opt, i) => {
+                    const v = row.getVal(opt);
                     return (
                       <td
-                        key={id}
-                        className="px-3 py-2 text-right align-middle text-[#222222]"
+                        key={i}
+                        className={`px-3 py-2 text-right align-middle text-[#222222] tabular-nums ${!opt ? "text-gray-300" : ""}`}
                       >
-                        {enabled ? (v != null ? KRW(v) : dash) : dash}
+                        {opt && opt.enabled ? (v != null ? KRW(v) : dash) : dash}
                       </td>
                     );
                   })}
@@ -889,181 +983,197 @@ export default function Page() {
 
               {/* 대출/이자 */}
               <tr className="border-t bg-gray-50">
-                <td className="px-4 py-2 text-xs font-semibold text-gray-600 whitespace-nowrap">
+                <td className="sticky left-0 z-10 bg-gray-50 px-4 py-2 text-xs font-semibold text-gray-600 whitespace-nowrap">
                   대출/이자
                 </td>
-                {allOptIds.map((id) => (
-                  <td key={id} className="px-3 py-2"></td>
+                {slots.map((opt, i) => (
+                  <td key={i} className="px-3 py-2"></td>
                 ))}
               </tr>
               <tr className="border-t border-gray-200">
-                <td className="px-4 py-2 pl-8 whitespace-nowrap text-left text-[#222222]">
+                <td className="sticky left-0 z-10 bg-white px-4 py-2 pl-8 whitespace-nowrap text-left text-[#222222] truncate">
                   대출원금
                 </td>
-                {allOptIds.map((id) => {
-                  const r = results.get(id);
+                {slots.map((opt, i) => {
+                  const r = opt ? results.get(opt.id) : null;
                   return (
                     <td
-                      key={id}
-                      className="px-3 py-2 text-right align-middle text-[#222222]"
+                      key={i}
+                      className={`px-3 py-2 text-right align-middle text-[#222222] tabular-nums ${!opt ? "text-gray-300" : ""}`}
                     >
-                      {r ? KRW(r.loanPrincipal) : dash}
+                      {opt && opt.enabled && r ? KRW(r.loanPrincipal) : dash}
                     </td>
                   );
                 })}
               </tr>
               <tr className="border-t border-gray-200">
-                <td className="px-4 py-2 pl-8 whitespace-nowrap text-left text-[#222222]">
+                <td className="sticky left-0 z-10 bg-white px-4 py-2 pl-8 whitespace-nowrap text-left text-[#222222] truncate">
                   월 이자
                 </td>
-                {allOptIds.map((id) => {
-                  const r = results.get(id);
+                {slots.map((opt, i) => {
+                  const r = opt ? results.get(opt.id) : null;
                   return (
                     <td
-                      key={id}
-                      className="px-3 py-2 text-right align-middle text-[#222222]"
+                      key={i}
+                      className={`px-3 py-2 text-right align-middle text-[#222222] tabular-nums ${!opt ? "text-gray-300" : ""}`}
                     >
-                      {r ? KRW(r.monthlyInterest) : dash}
+                      {opt && opt.enabled && r ? KRW(r.monthlyInterest) : dash}
                     </td>
                   );
                 })}
               </tr>
 
-              {/* 합계 (미포함) */}
+              {/* 합계 */}
               <tr className="border-t bg-gray-50">
-                <td className="px-4 py-2 text-xs font-semibold text-gray-600 whitespace-nowrap">
-                  합계(기회비용 미포함)
+                <td className="sticky left-0 z-10 bg-gray-50 px-4 py-2 text-xs font-semibold text-gray-600 whitespace-nowrap">
+                  합계
                 </td>
-                {allOptIds.map((id) => (
-                  <td key={id} className="px-3 py-2"></td>
+                {slots.map((opt, i) => (
+                  <td key={i} className="px-3 py-2"></td>
                 ))}
               </tr>
               <tr className="border-t border-gray-200">
-                <td className="px-4 py-2 pl-8 whitespace-nowrap text-left text-[#222222]">
+                <td className="sticky left-0 z-10 bg-white px-4 py-2 pl-8 whitespace-nowrap text-left text-[#222222] truncate">
                   월 합계
                 </td>
-                {allOptIds.map((id) => {
-                  const v = results.get(id)?.monthlyTotal;
+                {slots.map((opt, i) => {
+                  const v = opt ? results.get(opt.id)?.monthlyTotal : undefined;
                   return (
                     <td
-                      key={id}
-                      className="px-3 py-2 text-right align-middle text-[#222222]"
+                      key={i}
+                      className={`px-3 py-2 text-right align-middle text-[#222222] tabular-nums ${!opt ? "text-gray-300" : ""}`}
                     >
-                      <div className="inline-flex items-center justify-end gap-2 w-full">
-                        <Delta val={v} best={bestMonthlyBase} />
-                        <span className="font-semibold text-[#222222]">
-                          {typeof v === "number" ? KRW(v) : dash}
-                        </span>
-                      </div>
+                      {opt && opt.enabled ? (
+                        <div className="inline-flex items-center justify-end gap-2 w-full">
+                          <Delta val={v} best={bestMonthlyBase} />
+                          <span className="font-semibold text-[#222222]">
+                            {typeof v === "number" ? KRW(v) : dash}
+                          </span>
+                        </div>
+                      ) : (
+                        dash
+                      )}
                     </td>
                   );
                 })}
               </tr>
               {adv.enabled && (
                 <tr className="border-t border-gray-200">
-                  <td className="px-4 py-2 pl-8 whitespace-nowrap text-left text-[#222222]">
-                    총 비용({adv.termYears}년)
+                  <td className="sticky left-0 z-10 bg-white px-4 py-2 pl-8 whitespace-nowrap text-left text-[#222222] truncate">
+                    총 비용
                   </td>
-                  {allOptIds.map((id) => {
-                    const v = results.get(id)?.totalBase;
+                  {slots.map((opt, i) => {
+                    const v = opt ? results.get(opt.id)?.totalBase : undefined;
                     return (
                       <td
-                        key={id}
-                        className="px-3 py-2 text-right align-middle text-[#222222]"
+                        key={i}
+                        className={`px-3 py-2 text-right align-middle text-[#222222] tabular-nums ${!opt ? "text-gray-300" : ""}`}
                       >
-                        <div className="inline-flex items-center justify-end gap-2 w-full">
-                          <Delta val={v} best={bestTotalBase} />
-                          <span className="font-semibold text-[#222222]">
-                            {typeof v === "number" ? KRW(v) : dash}
-                          </span>
-                        </div>
+                        {opt && opt.enabled ? (
+                          <div className="inline-flex items-center justify-end gap-2 w-full">
+                            <Delta val={v} best={bestTotalBase} />
+                            <span className="font-semibold text-[#222222]">
+                              {typeof v === "number" ? KRW(v) : dash}
+                            </span>
+                          </div>
+                        ) : (
+                          dash
+                        )}
                       </td>
                     );
                   })}
                 </tr>
               )}
 
-              {/* 합계 (포함) */}
+              {/* 합계(+기회비용) */}
               {adv.enabled && (
                 <>
-                  <tr className="border-t bg-gray-50">
-                    <td className="px-4 py-2 text-xs font-semibold text-gray-600 whitespace-nowrap">
-                      합계(기회비용 포함)
+                  <tr className="border-t-2 border-gray-300 bg-gray-50">
+                    <td className="sticky left-0 z-10 bg-gray-50 px-4 py-2 text-xs font-semibold text-gray-600 whitespace-nowrap">
+                      합계(+기회비용)
                     </td>
-                    {allOptIds.map((id) => (
-                      <td key={id} className="px-3 py-2"></td>
+                    {slots.map((opt, i) => (
+                      <td key={i} className="px-3 py-2"></td>
                     ))}
                   </tr>
                   <tr className="border-t border-gray-200">
-                    <td className="px-4 py-2 pl-8 whitespace-nowrap text-left text-[#222222]">
-                      자기자본(내 돈)
+                    <td className="sticky left-0 z-10 bg-white px-4 py-2 pl-8 whitespace-nowrap text-left text-[#222222] truncate">
+                      내 돈
                     </td>
-                    {allOptIds.map((id) => {
-                      const v = results.get(id)?.ownCapital;
+                    {slots.map((opt, i) => {
+                      const v = opt ? results.get(opt.id)?.ownCapital : undefined;
                       return (
                         <td
-                          key={id}
-                          className="px-3 py-2 text-right align-middle text-[#222222]"
+                          key={i}
+                          className={`px-3 py-2 text-right align-middle text-[#222222] tabular-nums ${!opt ? "text-gray-300" : ""}`}
                         >
-                          {typeof v === "number" ? KRW(v) : dash}
+                          {opt && opt.enabled ? (typeof v === "number" ? KRW(v) : dash) : dash}
                         </td>
                       );
                     })}
                   </tr>
                   <tr className="border-t border-gray-200">
-                    <td className="px-4 py-2 pl-8 whitespace-nowrap text-left text-[#222222]">
+                    <td className="sticky left-0 z-10 bg-white px-4 py-2 pl-8 whitespace-nowrap text-left text-[#222222] truncate">
                       월 기회비용
                     </td>
-                    {allOptIds.map((id) => {
-                      const v = results.get(id)?.monthlyOpp;
+                    {slots.map((opt, i) => {
+                      const v = opt ? results.get(opt.id)?.monthlyOpp : undefined;
                       return (
                         <td
-                          key={id}
-                          className="px-3 py-2 text-right align-middle text-[#222222]"
+                          key={i}
+                          className={`px-3 py-2 text-right align-middle text-[#222222] tabular-nums ${!opt ? "text-gray-300" : ""}`}
                         >
-                          {typeof v === "number" ? KRW(v) : dash}
+                          {opt && opt.enabled ? (typeof v === "number" ? KRW(v) : dash) : dash}
                         </td>
                       );
                     })}
                   </tr>
                   <tr className="border-t border-gray-200">
-                    <td className="px-4 py-2 pl-8 whitespace-nowrap text-left text-[#222222]">
-                      월 합계(기회비용 포함)
+                    <td className="sticky left-0 z-10 bg-white px-4 py-2 pl-8 whitespace-nowrap text-left text-[#222222] truncate">
+                      월 합계
                     </td>
-                    {allOptIds.map((id) => {
-                      const v = results.get(id)?.monthlyWithOpp;
+                    {slots.map((opt, i) => {
+                      const v = opt ? results.get(opt.id)?.monthlyWithOpp : undefined;
                       return (
                         <td
-                          key={id}
-                          className="px-3 py-2 text-right align-middle text-[#222222]"
+                          key={i}
+                          className={`px-3 py-2 text-right align-middle text-[#222222] tabular-nums ${!opt ? "text-gray-300" : ""}`}
                         >
-                          <div className="inline-flex items-center justify-end gap-2 w-full">
-                            <Delta val={v} best={bestMonthlyWithOpp} />
-                            <span className="font-semibold text-[#222222]">
-                              {typeof v === "number" ? KRW(v) : dash}
-                            </span>
-                          </div>
+                          {opt && opt.enabled ? (
+                            <div className="inline-flex items-center justify-end gap-2 w-full">
+                              <Delta val={v} best={bestMonthlyWithOpp} />
+                              <span className="font-semibold text-[#222222]">
+                                {typeof v === "number" ? KRW(v) : dash}
+                              </span>
+                            </div>
+                          ) : (
+                            dash
+                          )}
                         </td>
                       );
                     })}
                   </tr>
                   <tr className="border-t border-gray-200">
-                    <td className="px-4 py-2 pl-8 whitespace-nowrap text-left text-[#222222]">
-                      총 비용(기회비용 포함, {adv.termYears}년)
+                    <td className="sticky left-0 z-10 bg-white px-4 py-2 pl-8 whitespace-nowrap text-left text-[#222222] truncate">
+                      총 비용
                     </td>
-                    {allOptIds.map((id) => {
-                      const v = results.get(id)?.totalWithOpp;
+                    {slots.map((opt, i) => {
+                      const v = opt ? results.get(opt.id)?.totalWithOpp : undefined;
                       return (
                         <td
-                          key={id}
-                          className="px-3 py-2 text-right align-middle text-[#222222]"
+                          key={i}
+                          className={`px-3 py-2 text-right align-middle text-[#222222] tabular-nums ${!opt ? "text-gray-300" : ""}`}
                         >
-                          <div className="inline-flex items-center justify-end gap-2 w-full">
-                            <Delta val={v} best={bestTotalWithOpp} />
-                            <span className="font-semibold text-[#222222]">
-                              {typeof v === "number" ? KRW(v) : dash}
-                            </span>
-                          </div>
+                          {opt && opt.enabled ? (
+                            <div className="inline-flex items-center justify-end gap-2 w-full">
+                              <Delta val={v} best={bestTotalWithOpp} />
+                              <span className="font-semibold text-[#222222]">
+                                {typeof v === "number" ? KRW(v) : dash}
+                              </span>
+                            </div>
+                          ) : (
+                            dash
+                          )}
                         </td>
                       );
                     })}
@@ -1391,7 +1501,7 @@ export default function Page() {
             주거비 비교 계산기
           </h1>
           <p className="text-sm md:text-base text-gray-600">
-            이사 전, 여러 매물의 보증금·월세·관리비·이자 등을 입력해 월·총 비용을 한눈에 비교하세요.
+            여러 매물의 보증금·월세·관리비·이자 등을 입력해 월·총 비용을 한눈에 비교하세요.
           </p>
         </header>
 
@@ -1403,16 +1513,16 @@ export default function Page() {
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">
-                보유현금(원)
+                보유현금 <span className="text-gray-700">(만원)</span>
               </label>
-              <MoneyInputField
+              <MoneyInputMan
                 id="common-cashOnHand"
                 value={common.cashOnHandStr}
                 onChange={setCommonField("cashOnHandStr")}
               />
-              {common.cashOnHandStr && toNum(common.cashOnHandStr) >= 10000 && (
+              {common.cashOnHandStr && toNum(common.cashOnHandStr) > 0 && (
                 <div className="mt-1 text-xs text-[#007AFF]">
-                  {formatKoreanCurrency(toNum(common.cashOnHandStr))}
+                  {formatKoreanCurrency(manToWon(toNum(common.cashOnHandStr)))}
                 </div>
               )}
             </div>
@@ -1474,8 +1584,9 @@ export default function Page() {
                     placeholder="0.0"
                   />
                   <p className="mt-1 text-xs text-gray-500">
-                    보유현금 중 보증금으로 묶이는 금액에, 선택한 수익률을 적용한 월
-                    기회비용입니다.
+                    보증금으로 잠시 묶이는 돈에 적용할 예상 수익률이에요.
+                    <br />
+                    예를 들어 3%로 설정하면, 그 돈을 예금이나 투자에 넣었을 때 받을 수 있는 이자 수준을 비용 계산에 반영합니다.
                   </p>
                 </div>
               </div>
@@ -1510,41 +1621,28 @@ export default function Page() {
               </button>
             )}
         </div>
-          <section className="grid gap-4 md:grid-cols-2">
+          <section className="grid gap-5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
             {opts.map((o) => {
               const r = realtimeResults.get(o.id);
               
               return (
-                <div key={o.id} className="rounded-2xl border border-gray-200 bg-white p-4 md:p-6 shadow-sm min-h-[420px]">
-                  <div className="mb-3 flex items-center justify-between gap-3">
+                <div key={o.id} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm w-full min-w-0">
+                  <div className="mb-3 flex items-center justify-between gap-2">
                     <input
-                      className="flex-1 rounded-lg border border-gray-300 px-3 py-2 font-semibold text-[#222222] focus:outline-none focus:ring-2 focus:ring-[#007AFF] focus:border-transparent"
+                      className="flex-1 min-w-0 rounded-lg border border-gray-300 px-3 py-2 font-semibold text-[#222222] focus:outline-none focus:ring-2 focus:ring-[#007AFF] focus:border-transparent"
                       value={o.title}
                       onChange={(e) => setOpt(o.id, { title: e.target.value })}
                       placeholder={`${o.id} 제목`}
                     />
-                    <div className="flex items-center gap-3">
-                      <label className="flex items-center gap-2 text-sm text-gray-700 whitespace-nowrap">
-                        <input
-                          type="checkbox"
-                          checked={o.enabled}
-                          onChange={(e) =>
-                            setOpt(o.id, { enabled: e.target.checked })
-                          }
-                          className="rounded"
-                        />
-                        사용
-                      </label>
-                      {opts.length > 1 && (
-                        <button
-                          onClick={() => removeOption(o.id)}
-                          className="text-sm text-red-500 hover:text-red-700 transition-colors"
-                          title="옵션 삭제"
-                        >
-                          ✕
-                        </button>
-                      )}
-                    </div>
+                    {opts.length > 1 && (
+                      <button
+                        onClick={() => removeOption(o.id)}
+                        className="flex-shrink-0 text-sm text-red-500 hover:text-red-700 transition-colors"
+                        title="옵션 삭제"
+                      >
+                        ✕
+                      </button>
+                    )}
                   </div>
 
                   <div className="mb-4 flex gap-3">
@@ -1570,113 +1668,52 @@ export default function Page() {
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
-                    {/* Row 1: 보증금 | 월세 */}
-                    <div>
-                      <div className="mb-1 text-sm font-medium text-gray-700">
-                        보증금(원)
-                      </div>
-                      <MoneyInputField
-                        id={`${o.id}-deposit`}
-                        value={o.depositStr}
-                        onChange={setOptField(o.id, "depositStr")}
-                      />
-                      {o.depositStr && toNum(o.depositStr) >= 10000 && (
-                        <div className="mt-1 text-xs text-[#007AFF]">
-                          {formatKoreanCurrency(toNum(o.depositStr))}
+                  {/* 입력 필드: 2열 그리드 */}
+                  <div className="space-y-3">
+                    {/* 1. 보증금/월세 (2열) */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <div className="mb-1 text-sm font-medium text-gray-700">
+                          보증금 <span className="text-gray-700">(만원)</span>
                         </div>
-                      )}
-                    </div>
-                    <div>
-                      {o.rentType === "WOLSE" ? (
-                        <>
-                          <div className="mb-1 text-sm font-medium text-gray-700">
-                            월세(원)
+                        <MoneyInputMan
+                          id={`${o.id}-deposit`}
+                          value={o.depositStr}
+                          onChange={setOptField(o.id, "depositStr")}
+                        />
+                        {o.depositStr && toNum(o.depositStr) > 0 && (
+                          <div className="mt-1 text-xs text-[#007AFF]">
+                            {formatKoreanCurrency(manToWon(toNum(o.depositStr)))}
                           </div>
-                          <MoneyInputField
+                        )}
+                      </div>
+                      {o.rentType === "WOLSE" ? (
+                        <div>
+                          <div className="mb-1 text-sm font-medium text-gray-700">
+                            월세 <span className="text-gray-700">(만원)</span>
+                          </div>
+                          <MoneyInputMan
                             id={`${o.id}-monthlyRent`}
                             value={o.monthlyRentStr ?? ""}
                             onChange={setOptField(o.id, "monthlyRentStr")}
                           />
-                          {o.monthlyRentStr && toNum(o.monthlyRentStr) >= 10000 && (
+                          {o.monthlyRentStr && toNum(o.monthlyRentStr) > 0 && (
                             <div className="mt-1 text-xs text-[#007AFF]">
-                              {formatKoreanCurrency(toNum(o.monthlyRentStr))}
+                              {formatKoreanCurrency(manToWon(toNum(o.monthlyRentStr)))}
                             </div>
                           )}
-                        </>
+                        </div>
                       ) : (
-                        <DisabledBox label="월세(원)" />
+                        <DisabledBox label="월세(만원)" />
                       )}
                     </div>
 
-                    {/* Row 2: 관리비 | 주차비 */}
+                    {/* 2. 대출원금(만원) */}
                     <div>
-                      <div className="mb-1 text-sm font-medium text-gray-700">
-                        관리비(원)
-                      </div>
-                      <MoneyInputField
-                        id={`${o.id}-mgmtFee`}
-                        value={o.mgmtFeeStr}
-                        onChange={setOptField(o.id, "mgmtFeeStr")}
-                      />
-                      {o.mgmtFeeStr && toNum(o.mgmtFeeStr) >= 10000 && (
-                        <div className="mt-1 text-xs text-[#007AFF]">
-                          {formatKoreanCurrency(toNum(o.mgmtFeeStr))}
-                        </div>
-                      )}
-                    </div>
-                    <div>
-                      <div className="mb-1 text-sm font-medium text-gray-700">
-                        주차비(원)
-                      </div>
-                      <MoneyInputField
-                        id={`${o.id}-parkingFee`}
-                        value={o.parkingFeeStr}
-                        onChange={setOptField(o.id, "parkingFeeStr")}
-                      />
-                      {o.parkingFeeStr && toNum(o.parkingFeeStr) >= 10000 && (
-                        <div className="mt-1 text-xs text-[#007AFF]">
-                          {formatKoreanCurrency(toNum(o.parkingFeeStr))}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Row 3: 교통비 | 대출 계산 토글 */}
-                    <div>
-                      <div className="mb-1 text-sm font-medium text-gray-700">
-                        교통비(월, 원)
-                      </div>
-                      <MoneyInputField
-                        id={`${o.id}-transportMonthly`}
-                        value={o.transportMonthlyStr}
-                        onChange={setOptField(o.id, "transportMonthlyStr")}
-                      />
-                      {o.transportMonthlyStr && toNum(o.transportMonthlyStr) >= 10000 && (
-                        <div className="mt-1 text-xs text-[#007AFF]">
-                          {formatKoreanCurrency(toNum(o.transportMonthlyStr))}
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex items-end justify-between gap-2">
-                      <label className="text-sm font-medium text-gray-700">
-                        <input
-                          type="checkbox"
-                          className="mr-2"
-                          checked={o.loanAuto}
-                          onChange={(e) =>
-                            setOpt(o.id, { loanAuto: e.target.checked })
-                          }
-                        />
-                        대출 원금 자동(보증금-보유현금)
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        대출원금 <span className="text-gray-700">(만원)</span>
                       </label>
-                    </div>
-
-                    {/* Row 4: 대출원금(항상 표시, 자동이면 비활성 + 자동값 표시) */}
-                    <div className="col-span-2">
-                      <div className="mb-1 text-sm font-medium text-gray-700">
-                        대출원금(원)
-                      </div>
-                      <MoneyInputField
+                      <MoneyInputMan
                         id={`${o.id}-loanPrincipal`}
                         value={
                           o.loanAuto
@@ -1688,35 +1725,96 @@ export default function Page() {
                               )
                             : o.loanPrincipalManualStr ?? ""
                         }
-                        onChange={(s) =>
-                          !o.loanAuto &&
-                          setOptField(o.id, "loanPrincipalManualStr")(s)
-                        }
+                        onChange={setOptField(o.id, "loanPrincipalManualStr")}
                         disabled={o.loanAuto}
                       />
-                      {o.loanAuto && (
-                        <p className="mt-1 text-xs text-gray-500">
-                          보증금-보유현금으로 자동 계산됩니다.
-                        </p>
+                      {(o.loanAuto
+                        ? toNum(o.depositStr) - toNum(common.cashOnHandStr) > 0
+                        : o.loanPrincipalManualStr && toNum(o.loanPrincipalManualStr) > 0) && (
+                        <div className="mt-1 text-xs text-[#007AFF]">
+                          {formatKoreanCurrency(
+                            manToWon(
+                              o.loanAuto
+                                ? Math.max(
+                                    toNum(o.depositStr) - toNum(common.cashOnHandStr),
+                                    0
+                                  )
+                                : toNum(o.loanPrincipalManualStr)
+                            )
+                          )}
+                        </div>
                       )}
-                      {!o.loanAuto &&
-                        o.loanPrincipalManualStr &&
-                        toNum(o.loanPrincipalManualStr) >= 10000 && (
+                      
+                      {/* 자동 입력 체크박스 */}
+                      <div className="mt-2 flex items-start gap-2">
+                        <input
+                          type="checkbox"
+                          checked={o.loanAuto}
+                          onChange={(e) =>
+                            setOpt(o.id, { loanAuto: e.target.checked })
+                          }
+                          className="mt-1"
+                        />
+                        <span className="text-sm">
+                          자동 입력
+                          <p className="text-xs text-gray-500 leading-snug">
+                            보유 현금이 부족한 경우, 부족한 금액만큼을 대출로 계산합니다.
+                            <br />
+                            기본 계산식은 <b>보증금 − 보유현금</b> 입니다.
+                          </p>
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* 4. 관리비, 주차비 (2열) */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <div className="mb-1 text-sm font-medium text-gray-700">
+                          관리비 <span className="text-gray-700">(원)</span>
+                        </div>
+                        <MoneyInputField
+                          id={`${o.id}-mgmtFee`}
+                          value={o.mgmtFeeStr}
+                          onChange={setOptField(o.id, "mgmtFeeStr")}
+                        />
+                        {o.mgmtFeeStr && toNum(o.mgmtFeeStr) >= 10000 && (
                           <div className="mt-1 text-xs text-[#007AFF]">
-                            {formatKoreanCurrency(toNum(o.loanPrincipalManualStr))}
-        </div>
-                        )}
-                      {o.loanAuto &&
-                        toNum(o.depositStr) - toNum(common.cashOnHandStr) >= 10000 && (
-                          <div className="mt-1 text-xs text-[#007AFF]">
-                            {formatKoreanCurrency(
-                              Math.max(
-                                toNum(o.depositStr) - toNum(common.cashOnHandStr),
-                                0
-                              )
-                            )}
+                            {formatKoreanCurrency(toNum(o.mgmtFeeStr))}
                           </div>
                         )}
+                      </div>
+                      <div>
+                        <div className="mb-1 text-sm font-medium text-gray-700">
+                          주차비 <span className="text-gray-700">(원)</span>
+                        </div>
+                        <MoneyInputField
+                          id={`${o.id}-parkingFee`}
+                          value={o.parkingFeeStr}
+                          onChange={setOptField(o.id, "parkingFeeStr")}
+                        />
+                        {o.parkingFeeStr && toNum(o.parkingFeeStr) >= 10000 && (
+                          <div className="mt-1 text-xs text-[#007AFF]">
+                            {formatKoreanCurrency(toNum(o.parkingFeeStr))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 5. 교통비 (전체 너비) */}
+                    <div>
+                      <div className="mb-1 text-sm font-medium text-gray-700">
+                        교통비 <span className="text-gray-700">(원)</span>
+                      </div>
+                      <MoneyInputField
+                        id={`${o.id}-transportMonthly`}
+                        value={o.transportMonthlyStr}
+                        onChange={setOptField(o.id, "transportMonthlyStr")}
+                      />
+                      {o.transportMonthlyStr && toNum(o.transportMonthlyStr) >= 10000 && (
+                        <div className="mt-1 text-xs text-[#007AFF]">
+                          {formatKoreanCurrency(toNum(o.transportMonthlyStr))}
+                        </div>
+                      )}
                     </div>
                   </div>
 
