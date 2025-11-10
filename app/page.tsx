@@ -1120,7 +1120,7 @@ export default function Page() {
               className="flex-1 rounded-lg border border-gray-300 px-3 py-2 font-semibold text-[#222222] focus:outline-none focus:ring-2 focus:ring-[#007AFF] focus:border-transparent"
               value={o.title}
               onChange={(e) => onSetOpt(o.id, { title: e.target.value })}
-              placeholder={`옵션 ${o.id} 제목(예: 서판교 2층)`}
+              placeholder={`${o.id} 제목`}
             />
             <label className="flex items-center gap-2 text-sm text-gray-700 whitespace-nowrap">
               <input
@@ -1521,7 +1521,7 @@ export default function Page() {
                       className="flex-1 rounded-lg border border-gray-300 px-3 py-2 font-semibold text-[#222222] focus:outline-none focus:ring-2 focus:ring-[#007AFF] focus:border-transparent"
                       value={o.title}
                       onChange={(e) => setOpt(o.id, { title: e.target.value })}
-                      placeholder={`옵션 ${o.id} 제목(예: 서판교 2층)`}
+                      placeholder={`${o.id} 제목`}
                     />
                     <div className="flex items-center gap-3">
                       <label className="flex items-center gap-2 text-sm text-gray-700 whitespace-nowrap">
