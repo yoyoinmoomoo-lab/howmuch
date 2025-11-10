@@ -1621,12 +1621,12 @@ export default function Page() {
               </button>
             )}
         </div>
-          <section className="grid gap-5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+          <section className="grid gap-5 grid-cols-1 md:grid-cols-[repeat(auto-fit,minmax(450px,1fr))]">
             {opts.map((o) => {
               const r = realtimeResults.get(o.id);
               
               return (
-                <div key={o.id} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm w-full min-w-0">
+                <div key={o.id} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm md:min-w-[450px]">
                   <div className="mb-3 flex items-center justify-between gap-2">
                     <input
                       className="flex-1 min-w-0 rounded-lg border border-gray-300 px-3 py-2 font-semibold text-[#222222] focus:outline-none focus:ring-2 focus:ring-[#007AFF] focus:border-transparent"
