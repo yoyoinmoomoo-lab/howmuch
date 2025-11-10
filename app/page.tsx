@@ -1782,43 +1782,6 @@ export default function Page() {
         )}
 
 
-        {/* 푸터 */}
-        <footer className="mt-8 border-t border-gray-200 pt-6">
-          <div className="text-center text-xs md:text-sm text-gray-600 space-y-2">
-            <p className="font-medium">
-              본 계산기는 참고용이며, 입력값은 서버에 저장되지 않습니다. 광고/제휴 링크가 포함될 수 있습니다.
-            </p>
-            <div className="flex flex-wrap justify-center gap-4 mt-4">
-              <a
-                href="https://moomoo.so/privacy"
-            target="_blank"
-            rel="noopener noreferrer"
-                className="text-[#007AFF] hover:underline"
-              >
-                Privacy
-              </a>
-              <span className="text-gray-400">|</span>
-              <a
-                href="https://moomoo.so/terms"
-            target="_blank"
-            rel="noopener noreferrer"
-                className="text-[#007AFF] hover:underline"
-              >
-                Terms
-              </a>
-              <span className="text-gray-400">|</span>
-              <a
-                href="https://moomoo.so/disclaimer"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-[#007AFF] hover:underline"
-              >
-                Disclaimer
-          </a>
-        </div>
-    </div>
-        </footer>
-
         {/* 광고 슬롯 #2 */}
         <div id="ad-slot-2" className="mt-8 md:mt-12">
           <div className="rounded-lg border-2 border-dashed border-gray-300 bg-gray-100 p-8 text-center text-gray-400">
